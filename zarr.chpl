@@ -21,7 +21,13 @@ proc verifyCorrectness(ref A: [?D]) {
 
   if dimCount == 2 {
     forall (i,j) in A.domain {
-      assert(A[i,j] == i*j);
+      if (A[i,j] != i*j) {
+        writeln("Failure for indices %i %i".format(i,j));
+        writeln("Expected: %i\nReceived: %s".format(i*j, A[i,j]:string));
+        
+        assert(A[i,j] == i*j);
+      }
+      
     }
   }
     
@@ -193,7 +199,7 @@ proc throughputTest(param dimCount: int, type dtype) {
   {
     writeln("Starting distributed read of %iGB %iD store of %s".format(gbs, dimCount, dtype:string));
     s.restart();
-    var A = readZarrArrayV2Dist(name, real(32), dimCount);
+    var A = readZarrArrayV2Dist(name, dtype, dimCount);
     var t = s.elapsed();
     verifyCorrectness(A);
     writeln("Throughput: ", gbs:real / t, " GB/s on ", numLocales, " locales");
@@ -201,7 +207,7 @@ proc throughputTest(param dimCount: int, type dtype) {
   writeln();
 }
 
-proc smallTest() {
+proc smallTestReal() {
   writeln("Single-locale read...");
   var A = readZarrArrayV2("1mb2dreal32", real(32), 2);
   verifyCorrectness(A);
@@ -211,6 +217,18 @@ proc smallTest() {
   verifyCorrectness(A2);
 }
 
+proc smallTestInt() {
+  writeln("Single-locale read...");
+  var A = readZarrArrayV2("1mb2dint32", int(32), 2);
+  verifyCorrectness(A);
+
+  writeln("Distributed read...");
+  var A2 = readZarrArrayV2Dist("1mb2dint32", int(32), 2);
+  verifyCorrectness(A2);
+}
+
+//smallTestInt();
 writeln("Chunk Size: 10MB");
 throughputTest(2, real(32));
 throughputTest(2, int(32));
+throughputTest(2, int(64));
