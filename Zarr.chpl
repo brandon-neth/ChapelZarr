@@ -51,6 +51,35 @@ record zarrMetadataV3 {
   var dimension_names: list(string);
 };
 
+proc validateMetadata(metadata: zarrMetadataV2, type dtype, param dimCount) throws {
+  //dimensionality matches
+  if dimCount != metadata.shape.size then
+    throw new Error("Expected metadata shape field to have %i dimensions: %?".format(dimCount, metadata.shape));
+  if dimCount != metadata.chunks.size then
+    throw new Error("Expected metadata chunks field to have %i dimensions: %?".format(dimCount, metadata.chunks));
+  //positive, integer sizes
+  for i in 0..<dimCount {
+    if metadata.shape[i] <= 0 then
+      throw new Error("Metadata shape field must have positive side lengths: %?".format(metadata.shape));
+    if metadata.chunks[i] <= 0 then
+      throw new Error("Metadata chunks field must have positive side lengths: %?".format(metadata.chunks));
+  }
+
+  var chplType: string;
+  select metadata.dtype {
+    when "i4", "<i4" do chplType = "int(32)";
+    when "i8", "<i8" do chplType = "int(64)";
+    when "f4", "<f4" do chplType = "real(32)";
+    when "f8", "<f8" do chplType = "real(64)";
+    otherwise {
+      throw new Error("Only integer and floating point data types currently supported: %s".format(metadata.dtype));
+    }
+  }
+
+  if chplType != dtype:string then
+    throw new Error("Expected entries of type %s. Found %s".format(dtype:string, chplType));
+}
+
 proc buildChunkPath(directoryPath: string, delimiter: string, const chunkIndices: ?dimCount * int) {
   var indexStrings: dimCount*string;
   for i in 0..<dimCount do indexStrings[i] = chunkIndices[i] : string;
@@ -70,13 +99,18 @@ proc chunkIndexToLocalDomain(fullShape: ?dimCount * int, chunkShape: dimCount*in
 
 
 proc readChunk(param dimCount: int, chunkPath: string, chunkDomain: domain(dimCount), ref arraySlice: [] ?t) {
-  const f = open(chunkPath, ioMode.r);
+  const f: file;
+  try {
+    f = open(chunkPath, ioMode.r);
+  } catch {
+    arraySlice[arraySlice.domain] = 0;
+    return;
+  }
   const r = f.reader(deserializer = new binaryDeserializer());
   var compressedChunk = r.readBytes(f.size);
   var copyIn: [chunkDomain] t;
   var numRead = blosc_decompress(compressedChunk.c_str(), c_ptrTo(copyIn), copyIn.size*c_sizeof(t));
   arraySlice[arraySlice.domain] = copyIn[arraySlice.domain];
-  
 }
 
 
@@ -85,6 +119,7 @@ proc readZarrArrayV2Dist(directoryPath: string, type dtype, param dimCount: int)
   var r = openReader(metadataPath, deserializer = new jsonDeserializer());
   var md: zarrMetadataV2;
   r.readf("%?", md);
+  validateMetadata(md, dtype, dimCount);
   var totalShape, chunkShape : dimCount*int;
   var chunkCounts: dimCount*int;
   var totalRanges,chunkRanges: dimCount*range(int);
@@ -113,7 +148,6 @@ proc readZarrArrayV2Dist(directoryPath: string, type dtype, param dimCount: int)
     for i in 0..<dimCount {
       var low = floor(hereD.low[i]:real / chunkShape[i]:real):int;
       var high = min(chunkCounts[i],ceil((hereD.high[i]+1) / chunkShape[i]:real):int);
-
       localChunks[i] = low..<high; 
     }
     const localChunkDomain: domain(dimCount) = localChunks;
@@ -132,8 +166,6 @@ proc readZarrArrayV2Dist(directoryPath: string, type dtype, param dimCount: int)
       ref thisChunkSlice = hereA.localSlice(thisChunkHere);
       readChunk(dimCount, chunkPath, thisChunkDomain, thisChunkSlice);
     }
-
-
     blosc_destroy();
   }
 
@@ -157,7 +189,6 @@ proc readZarrArrayV2(directoryPath: string, type dtype, param dimCount: int) {
     chunkRanges[i] = 0..<chunkCounts[i];
   }
 
-  
   const D: domain(dimCount) = totalRanges;
   var A: [D] dtype;
 
@@ -227,8 +258,10 @@ proc smallTestInt() {
   verifyCorrectness(A2);
 }
 
-//smallTestInt();
-writeln("Chunk Size: 10MB");
-throughputTest(2, real(32));
-throughputTest(2, int(32));
-throughputTest(2, int(64));
+proc main() {
+  //smallTestInt();
+  writeln("Chunk Size: 10MB");
+  throughputTest(2, real(32));
+  throughputTest(2, int(32));
+  throughputTest(2, int(64));
+}
