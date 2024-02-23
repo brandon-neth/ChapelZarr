@@ -28,11 +28,15 @@ chunks = tuple([chunk_side for _ in range(dimensionality)])
 
 z = zarr.open(name, mode='w', shape=shape, chunks=chunks, dtype=dtype)
 if dimensionality==1:
-  z[:] = np.arange(shape[0])
+  for i in range(0,shape[0], chunks[0]):
+    z[i] = i
+  
 elif dimensionality==2:
-  for i in range(total_side):
-    z[i,:] = np.arange(shape[1]) * i
+  for i in range(0,shape[0], chunks[0]):
+    for j in range(0,shape[1], chunks[1]):
+      z[i,j] = i * j
 elif dimensionality==3:
-  for i in range(total_side):
-    for j in range(total_side):
-      z[i,j,:] = np.arange(shape[2]) + i * j
+  for i in range(0,shape[0], chunks[0]):
+    for j in range(0,shape[1], chunks[1]):
+      for k in range(0,shape[2], chunks[2]):
+        z[i,j,k] = i * j + k
