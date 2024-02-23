@@ -54,10 +54,28 @@ proc smallTest(type dtype) {
   }
 }
 
+proc reindexTest(type dtype) {
+  const D = {1..20,14..<72,-10..10};
+  var A: [D] dtype;
+  forall (i,j,k) in D do A[i,j,k] = (i + j*i + k*j):dtype;
+  if exists("ReindexStore") then rmTree("ReindexStore");
+  writeZarrArray("ReindexStore", A, (5,8,12));
+
+  var B = readZarrArray("ReindexStore", dtype, 3);
+  ref viewB = B.reindex(D);
+  assert(A.domain == viewB.domain, "Domain mismatch for array with offset dimensions");
+  forall i in D do
+    assert(A[i] == viewB[i], "Mismatch on indices %?. Written: %?\n. Read: %?\n.".format(i, A[i], viewB[i]));
+  
+  writeln("Success for reindexed");
+}
+
 
 proc main() {
-  smallTest(int(32));
-  smallTest(int(64));
-  smallTest(real(32));
-  smallTest(real(64));
+  const typeTuple = (0:int(32), 0:int(64), 0:real(32), 0:real(64));
+  for param i in 0..<typeTuple.size {
+    type dtype = typeTuple[i].type;
+    smallTest(dtype);
+    reindexTest(dtype);
+  }
 }

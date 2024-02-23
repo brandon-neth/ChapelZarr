@@ -316,7 +316,7 @@ proc readZarrArray(directoryPath: string, type dtype, param dimCount: int, blosc
    :arg bloscLevel: Compression level to use. 0 indicates no compression,
     9 (default) indicates maximum compression. 
 */
-proc writeZarrArray(directoryPath: string, A: [?domainType] ?dtype, chunkShape: ?dimCount*int, bloscThreads: int(32) = 1, bloscLevel: int(32) = 9) {
+proc writeZarrArray(directoryPath: string, ref A: [?domainType] ?dtype, chunkShape: ?dimCount*int, bloscThreads: int(32) = 1, bloscLevel: int(32) = 9) {
 
   // Create the metadata record that is written before the chunks
   var shape, chunks: list(int);
@@ -332,9 +332,17 @@ proc writeZarrArray(directoryPath: string, A: [?domainType] ?dtype, chunkShape: 
   const w = openWriter(metadataPath, serializer = new jsonSerializer());
   w.writef("%?\n", md);
 
+  // Normalize the array's domain to be zero-indexed
+  var normalizedRanges: dimCount*range(int);
+  for i in 0..<dimCount do
+    normalizedRanges[i] = 0..<shape[i];
+  const undistD: domain(dimCount) = normalizedRanges;
+  const dist = new blockDist(boundingBox=undistD);
+  const D = dist.createDomain(undistD);
+  ref normA = A.reindex(D);
 
   // Locks to synchronize locales writing to the same chunks
-  const allChunks = getLocalChunks(A.domain, A.domain, chunkShape);
+  const allChunks = getLocalChunks(normA.domain, normA.domain, chunkShape);
   var locks: [allChunks] sync bool;
 
   // Write the chunks
@@ -344,11 +352,11 @@ proc writeZarrArray(directoryPath: string, A: [?domainType] ?dtype, chunkShape: 
     blosc_set_nthreads(bloscThreads);
 
     // Get the part of the array that belongs to this locale
-    const hereD = A.localSubdomain();
-    ref hereA = A[hereD];
+    const hereD = normA.localSubdomain();
+    ref hereA = normA[hereD];
 
     // Identify the range of chunks this locale will contribute to
-    const localChunks = getLocalChunks(A.domain, hereD, chunkShape);
+    const localChunks = getLocalChunks(normA.domain, hereD, chunkShape);
 
     for chunkIndices in localChunks {
       // Get the part of the array that contributes to this chunk
