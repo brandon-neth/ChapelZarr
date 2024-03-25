@@ -10,7 +10,7 @@ config const storePath: string;
 
 var s: stopwatch;
 s.start();
-var A = readZarrArrayV2Dist(storePath, dtype, dimCount);
+var A = readZarrArray(storePath, dtype, dimCount);
 s.stop();
 
 var numElts = A.size;
